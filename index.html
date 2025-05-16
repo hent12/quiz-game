@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <title>《弹无虚发：党的知识问答战》</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body, html { width:100%; height:100%; overflow:hidden; font-family: sans-serif; background:#000; color:#fff; }
+    button { cursor:pointer; }
+
+    /* 启动 & 规则面板 */
+    #startOverlay, #rulesOverlay, #endOverlay {
+      position: absolute; top:0; left:0; width:100%; height:100%;
+      background: rgba(0,0,0,0.9);
+      display:flex; flex-direction:column; align-items:center; justify-content:center;
+      text-align:center; z-index:100;
+    }
+    #startOverlay h1, #endOverlay h2 { font-size:3rem; margin-bottom:0.5rem; }
+    #startOverlay .creator { font-size:1rem; margin-bottom:2rem; }
+    #startOverlay .btn, #endOverlay .btn {
+      padding:1rem 2rem; margin:0.5rem; background:#e74c3c; border:none;
+      border-radius:5px; color:#fff; font-size:1.2rem;
+    }
+    #rulesOverlay .bubble {
+      position: absolute; left:50%; width:60%; padding:1.6rem 2rem;
+      background:rgba(46,204,113,0.9); border-radius:8px; opacity:0;
+      transform: translateX(-50%) translateY(20px);
+      transition: opacity 0.5s, transform 0.5s; font-size:1.6rem;
+    }
+
+    /* 布局：左侧、游戏区、右侧 */
+    #container { display:flex; width:100%; height:100%; }
+    #leftPanel, #rightPanel {
+      width:25%; background:#111; border:2px solid #444; position:relative; overflow:hidden;
+    }
+    #leftPanel .panel-title, #rightPanel .panel-title {
+      position:absolute; top:0; width:100%; text-align:center;
+      background:#e74c3c; color:#000; padding:0.5rem 0; font-weight:bold;
+    }
+    #gameContainer { width:50%; position:relative; background:#000; }
+
+    /* 分数显示 */
+    #scoreDisplay {
+      position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+      font-size: 1.2rem; color: #f1c40f; z-index: 10;
+    }
+
+    /* 游戏画布 */
+    #gameCanvas { display:block; background:#111; width:100%; height:100%; }
+
+.fact-bubble {
+  position:absolute;
+  left:0;
+  top:-100px; /* 新增初始位置 */
+  background:rgba(46,204,113,0.9);
+  color:#000;
+  padding:16px 20px; /* 加大内边距 */
+  border-radius:8px;
+  font-size:20px; /* 缩小字号 */
+  opacity:0;
+  width:300px; /* 新增固定宽度 */
+  max-width:80%; /* 限制最大宽度 */
+  white-space: normal; /* 修改为自动换行 */
+  word-wrap: break-word; /* 新增换行规则 */
+  line-height:1.4; /* 增加行高 */
+  transition: all 0.5s ease-in-out, top 5s linear; /* 修改动画属性 */
+}
+
+    /* 奖励图标 */
+    .powerup {
+      position:absolute; border-radius:50%; width:16px; height:16px;
+    }
+
+    /* 复活问答面板 */
+    #quizOverlay {
+      position:absolute; top:0; left:0; width:100%; height:100%;
+      background:rgba(0,0,0,0.8);
+      display:flex; flex-direction:column; align-items:center; justify-content:center;
+      text-align:center; visibility:hidden; z-index:50;
+    }
+    #quizOverlay.show { visibility:visible; }
+    #quizOverlay .header {
+      font-size:1.5rem; margin-bottom:1rem; position:relative; padding-bottom:8px;
+    }
+    #quizOverlay .header::after {
+      content:''; position:absolute; bottom:0; left:50%; transform:translateX(-50%);
+      width:80%; height:4px; background:#e74c3c;
+    }
+    #quizOverlay #quizText { font-size:1.2rem; margin-bottom:1rem; width:80%; }
+    #quizOverlay #options { display:flex; flex-wrap:wrap; gap:0.5rem; justify-content:center; }
+    #quizOverlay #options button { padding:0.6rem 1.2rem; font-size:1rem; }
+    #quizOverlay .feedback { color:#e74c3c; margin-top:0.5rem; }
+  </style>
+</head>
+<body>
+
+  <!-- 启动界面 -->
+  <div id="startOverlay">
+    <h1>弹无虚发：党的知识问答战</h1>
+    <div class="creator">创作者：第十九组</div>
+    <button class="btn" id="startBtn">▶ 开始游戏</button>
+    <button class="btn" id="showRulesBtn">规则说明</button>
+  </div>
+
+  <!-- 规则气泡面板 -->
+  <div id="rulesOverlay" style="visibility:hidden;">
+    <button class="btn" id="closeRulesBtn" style="position:absolute; bottom:2rem;">返回</button>
+  </div>
+
+  <!-- 死亡结算界面 -->
+  <div id="endOverlay" style="visibility:hidden;">
+    <h2>游戏结束！</h2>
+    <p id="finalScore" style="font-size:1.2rem; margin:0.5rem;">总得分: 0</p>
+    <p id="pointsEarned" style="font-size:1.2rem; margin:0.5rem;">获得知识点: 0</p>
+    <p id="wrongAnswered" style="font-size:1.2rem; margin:0.5rem;">答错题数: 0</p>
+    <button class="btn" id="restartBtn">重新开始</button>
+  </div>
+
+  <div id="container">
+    <div id="leftPanel"><div class="panel-title">砖块掉落的知识点</div></div>
+    <div id="gameContainer">
+      <div id="scoreDisplay">得分: 0</div>
+      <canvas id="gameCanvas" width="480" height="360"></canvas>
+      <div id="quizOverlay">
+        <div class="header">已死亡<br>但是可以通过回答问题获得重新游玩机会哦</div>
+        <div id="quizText"></div>
+        <div id="options"></div>
+        <div class="feedback" id="feedbackText"></div>
+      </div>
+    </div>
+    <div id="rightPanel"><div class="panel-title">砖块掉落的知识点</div></div>
+  </div>
+
+  <script>
+    // ==== 全局变量 & 初始化 ====
+    const canvas = document.getElementById('gameCanvas'), ctx = canvas.getContext('2d');
+    const W = canvas.width, H = canvas.height;
+    const panels = [document.getElementById('leftPanel'), document.getElementById('rightPanel')];
+    let bricks = [], balls = [], paddle, animationId;
+    let quizQueue = [], savedBricks = [], score = 0;
+    let powerups = [];
+    let knowledgeCount = 0;     // 新增：知识点计数
+    let wrongCount = 0;         // 新增：答错计数
+
+const scoreDisplay = document.getElementById('scoreDisplay');
+const facts = [
+  '1921年，党的一大在上海和嘉兴南湖召开。',
+  '1949年10月1日，中华人民共和国成立。',
+  '1978年，邓小平提出改革开放。',
+  '7月1日是建党纪念日。',
+  '“两个务必”指谦虚谨慎和艰苦奋斗。',
+  '中国共产党第二十次全国代表大会是在向第二个百年奋斗目标进军的关键时刻召开的。',
+  '基层党组织应当加强流动党员管理，对外出 6 个月以上并且没有转移组织关系的流动党员，应当保持经常联系。',
+  '1924 年 7 月起，在广州开办的六届农民运动讲习所先后由共产党人彭湃、阮啸仙、毛泽东等主持。',
+  '在中国共产党第一次全国代表大会上陈独秀被选为中央局书记。',
+  '1927 年 7 月 15 日，汪精卫召开国民党中央常务委员会扩大会议，第一次国共合作终于全面破裂。',
+  '1956 年中国共产党第八次全国代表大会在北京举行。',
+  '党员受留党察看处分期间，坚持不改或者又发现其他应当受到党纪处分的违纪行为的，应当开除党籍。',
+  '瓦窑堡会议表明党已经克服“左”倾冒险主义和关门主义。',
+  '中国共产党几次反“围剿”中行之有效的战略有积极防御，诱敌深入。',
+  '党的七大将毛泽东思想作为党的指导思想写入党章。',
+  '1939 年 10 月毛泽东在《发刊词》中指出，中国共产党在中国革命中战胜敌人的三个主要法宝是统一战线、武装斗争和党的建设。',
+  '健全一体化国家战略体系和能力建设工作机制，完善涉军决策议事协调体制机制。',
+  '党员无正当理由，连续 6 个月不缴纳党费，就被认为是自行脱党。',
+  '党的基层委员会、总支部委员会、支部委员会每届任期三年至五年。',
+  '党组织应当通过宣传党的政治主张和深入细致的思想政治工作，提高党外群众对党的认识，不断扩大入党积极分子队伍。',
+  '高校党组织对组织关系保留在学校的高校毕业生流动党员，应当继续履行管理职责。党员组织关系保留时间一般不超过 2 年。',
+  '教育、科技、人才是中国式现代化的基础性、战略性支撑。',
+  '长征胜利地跨越了 11 个省，中央红军的总行程达 2.5 万里以上。',
+  '党的二十大报告指出，十年来，我们坚持走中国特色社会主义政治发展道路，全面发展全过程人民民主。',
+  '对采取弄虚作假或其他手段把不符合党员条件的人发展为党员，或为非党员出具党员身份证明的，应当依法违纪严肃处理。',
+  '在发展中保障和改善民生是中国式现代化的重大任务。',
+  '发展是我党执政兴国的第一要务。',
+  '1936 年 10 月 9 日，红四军方面指挥部到达甘肃会宁，同红一方面军会合。',
+  '中国共产党百年历史可以划分成 4 个阶段。',
+  '对入党积极分子经过一年以上培养教育和考察，经支部委员会集体讨论同意，将其确定为发展对象。',
+  '1935 年 12 月，中共中央在陕北召开政治局扩大会议，确立了建立广泛的抗日民族统一战线政策。这次会议是瓦窑堡会议。',
+  '长征的胜利是中国革命转危为安的关键。',
+  '人工智能属于战略性产业。',
+  '五四运动倡导的精神有爱国、进步、民主、科学。',
+  '我们党作为世界上最大的马克思主义执政党，要始终赢得人民拥护，必须时刻保持解决大党独有难题的清醒和坚定。',
+  '强化国家安全工作协调机制，完善国家安全法治体系、风险监测预警体系，完善重点领域安全保障体系和重要专项协调指挥体系。',
+  '到 2035 年完成《中共中央关于进一步全面深化改革推进中国式现代化的决定》提出的改革任务。',
+  '发展党员工作应坚持党章规定的党员标准，始终把政治标准放在首位。',
+  '支部委员会应当对发展对象进行严格审查，经集体讨论认为合格后，报具有审批权限的基层党委预审。',
+  '1931 年 9 月 18 日，驻扎在中国东北的日本关东军向中国军队驻地北大营和沈阳城发动了九一八事变。',
+  '党的各级代表大会代表实行任期制。',
+  '凡是有正式党员 3 人以上的，都应当成立党的基层组织。',
+  '平津战役基本上解放了华北全境。',
+  '预备期从支部大会通过其为预备党员之日算起。',
+  '1953 年，新中国正式提出过渡时期的总路线。',
+  '国民革命军第四军有“铁军”的称号。',
+  '九一八事变后，中日民族矛盾逐渐上升为主要矛盾。',
+  '各级党委留存的党费主要用于教育培训党员、支持基层党组织开展组织生活。',
+  '党员每年集中学习培训时间一般不少于 32 学时。',
+  '党组织收到入党申请书后，应当在一个月内派人同入党申请人谈话，了解基本情况。',
+  '京汉铁路大罢工最终失败了。从中我们可以看出工人阶级势单力薄。',
+  '1937 年开始的全国抗日战争，中国建立起抗日民族统一战线，既是关系中华民族生死存亡的关键阶段，也是中国共产党发展壮大的重要时期。',
+  '建设现代化产业体系，坚持把发展经济的着力点放在实体经济上，推进新型工业化。',
+  '1935 年 1 月 15 日至 17 日，遵义会议召开。',
+  '1923 年 6 月，中共三大在广州召开。',
+  '1924 年 1 月召开的国民党一大是第一次国共合作正式形成的标志。',
+  '勇于自我革命是我们党最鲜明的品格，也是我们党最大的优势。',
+  '第一个中文全译本《共产党宣言》是由陈望道翻译，1920 年 8 月由上海社会主义研究社出版。',
+  '在广州起义中，起义军同敌人进行了顽强战斗，终因敌众我寡，起义很快即告失败，张太雷和许多革命者英勇牺牲。',
+  '随着国共合作步伐加快，应孙中山邀请，苏联代表鲍罗廷到达广州，不久被聘为政治顾问。',
+  '全国解放战争三大战役中，历时最长、规模最大、歼敌数量最多的是淮海战役。',
+  '党各级代表大会的代表和委员会的产生，要体现选举人的意志。',
+  '党的三大决定共产党员以个人身份加入国民党，实现国共合作，同时必须在政治上、思想上、组织上保持自己的独立性。',
+  '党的思想路线的内容是一切从实际出发，理论联系实际，实事求是，在实践中检验真理和发展真理。',
+  '赞成人数超过应到会有表决权的正式党员的半数，才能通过接收预备党员的决议。',
+  '预备党员违犯党纪，情节较轻的，可以保留预备党员资格的，党组织应当对其批评教育或者延长预备期。',
+  '预备党员违犯党纪，情节较重的，应当取消预备党员资格。',
+  '党的百年奋斗历程和伟大成就是我们增强“四个自信”最坚实的基础。',
+  '各级党委应当把发展党员工作列入重要议事日程，纳入党建工作责任制，作为党建工作述职、评议、考核和党务公开的重要内容。',
+  '1925 年 7 月 1 日，国民党政府在广州建立，汪精卫当选为主席。',
+  '参加党的有关会议，阅读党的有关文件，接受党的教育和培训属于党员的权利。',
+  '党的领导是中国式现代化的根本保证。',
+  '为保证党的路线、方针、政策、决议和国家法律法规的贯彻执行，根据《中国共产党章程》，制定《中国共产党纪律处分条例》。',
+  '中共中央于 1946 年 5 月 4 日将抗战以来的土地政策改为耕者有其田政策。',
+  '党的二十大报告指出，十年来，我们坚持走中国特色社会主义政治发展道路，全面发展全过程人民民主。',
+  '发展全过程人民民主是中国式现代化的本质要求。',
+  '陕甘根据地是土地革命战争后期全国硕果仅存的完整革命根据地，为党中央和各路红军长征提供了落脚点。',
+  '中国共产党成立后，建立了中国劳动组合书记部，集中力量从事工人运动。以 1922 年 1 月香港海员罢工为起点，掀起中国工人运动的第一个高潮。',
+  '1956 年新中国基本完成对农业、手工业、资本主义工商业的社会主义改造。',
+  '红船精神是开天辟地、敢为人先。',
+  '因思想蜕化提出退党，经教育后仍然坚持退党的，给予开除党籍处分。',
+  '协商民主是实践全过程人民民主的重要形式。',
+  '大革命失败后集中体现中国革命正确方向的是毛泽东、朱德领导的井冈山革命根据地的斗争。',
+  '延安时期，为了解决党内存在的思想分歧、宗派主义等问题，我们党开展了大规模的整风运动，使全党达到了空前的团结和统一，为夺取抗战胜利和全国解放奠定了强大思想政治基础。',
+  '中国抗战进入战略相持阶段的标志性事件是日军占领广州和武汉。',
+  '对停止党籍的党员，符合条件的，可以按照规定程序恢复党籍。对劝其退党、劝而不退除名、自行脱党除名、退党除名、开除党籍的，原则上不能恢复党籍，符合条件的可以重新入党。',
+  '对年老体弱、行动不便、身患重病甚至失能的党员，组织活动和开展学习教育可以作硬性要求。',
+  '发展党员坚持入党自愿原则和个别吸收原则，成熟一个，发展一个。',
+  '民主评议党员可以结合组织生活会一并进行。',
+  '留党察看延长期限最长可以延长两年。',
+  '从实际出发是我们共产党人认识把握历史的根本方法。',
+  '党员受留党察看处分期间，没有知情权、选举权和被选举权。',
+  '“八届九中全会”初步总结了“大跃进”以来的经验教训。',
+  '开国大典之前，第一届人民政治协商会议选举产生的中央人民政府委员会举行第一次会议，一致决议接受《共同纲领》为施政纲领。',
+  '《中国共产党纪律处分条例》适用于违犯党纪应当受到党纪责任追究的党组织和党员。',
+  '必须完善生态文明制度体系，协同推进降碳、减污、扩绿、增长，积极应对气候变化，加快完善落实绿水青山就是金山银山理念的体制机制。',
+  '对没有人事档案的党员所建立的党员档案，由县级以上党委组织部门保存。',
+  '广东是改革开放的排头兵、先行地、实验区，是建立经济特区时间最早、数量最多的省份。',
+  '土地革命时期，毛泽东指出：“星星之火，可以燎原”，这里的“星星之火”是指井冈山根据地。',
+  '为人民利益而奋斗是我们党立党兴党强党的根本出发点和落脚点。',
+  '1927 年 8 月 1 日，在以周恩来为书记的中共中央前敌委员会领导下，党所掌握和影响的军队在南昌打响了武装反抗国民党的第一枪。',
+  '培养什么人是教育的首要问题。',
+  '党的领导是进一步全面深化改革、推进中国式现代化的根本保证。',
+  '西安事变的背景是蒋介石准备对陕北根据地进行新的“会剿”。',
+  '古田会议决议强调要加强红军政治工作。',
+  '中共四大选出的新一届中央执行委员会中，毛泽东不在此列。'
+];
+const quizQuestions = [
+  {text:'党的成立是哪一年？',options:['1920','1921','1922'],answer:'1921'},
+  {text:'新中国成立于哪一年？',options:['1948','1949','1950'],answer:'1949'},
+  {text:'改革开放由谁提出？',options:['毛泽东','邓小平','江泽民'],answer:'邓小平'},
+  {text:'“两个务必”是哪两个？',options:['廉洁奉公','谦虚谨慎和艰苦奋斗','实事求是'],answer:'谦虚谨慎和艰苦奋斗'},
+  {text:'中国共产党第二十次全国代表大会是在向什么目标进军的关键时刻召开的？',options:['第一个百年奋斗目标','第二个百年奋斗目标','中国特色社会主义新时代','全面建成小康社会目标'],answer:'第二个百年奋斗目标'},
+  {text:'基层党组织应当加强流动党员管理，对外出多久以上并且没有转移组织关系的流动党员，应当保持经常联系？',options:['1个月','2个月','6个月','1年'],answer:'6个月'},
+  {text:'1924年7月起，在广州开办的六届农民运动讲习所先后由哪些共产党人主持？',options:['彭湃、阮啸仙、毛泽东','彭湃、毛泽东、阮啸仙','阮啸仙、彭湃、毛泽东','阮啸仙、毛泽东、彭湃'],answer:'彭湃、阮啸仙、毛泽东'},
+  {text:'在中国共产党第一次全国代表大会上谁被选为中央局书记？',options:['陈独秀','毛泽东','周恩来','李大钊'],answer:'陈独秀'},
+  {text:'1927年哪一天，汪精卫召开国民党中央常务委员会扩大会议，第一次国共合作终于全面破裂？',options:['7月14日','7月15日','7月16日','7月17日'],answer:'7月15日'},
+  {text:'哪一年中国共产党第八次全国代表大会在北京举行？',options:['1954年','1955年','1956年','1957年'],answer:'1956年'},
+  {text:'党员受留党察看处分期间，什么情况下应当开除党籍？',options:['坚持不改或者又发现其他应当受到党纪处分的违纪行为','撤销党内职务','留党察看','严重警告'],answer:'坚持不改或者又发现其他应当受到党纪处分的违纪行为'},
+  {text:'哪次会议表明党已经克服"左"倾冒险主义和关门主义？',options:['瓦窑堡','遵义','八七','洛川'],answer:'瓦窑堡'},
+  {text:'中国共产党几次反“围剿”中行之有效的战略有哪些？',options:['御敌于国门之外','分兵防御、"短促突击"','积极防御,诱敌深入','开展阵地战取代运动战'],answer:'积极防御,诱敌深入'},
+  {text:'党的哪次会议将毛泽东思想作为党的指导思想写入党章？',options:['五大','六大','七大','八大'],answer:'七大'},
+  {text:'1939年10月毛泽东在《发刊词》中指出，中国共产党在中国革命中战胜敌人的三个主要法宝是什么？',options:['统一战线、武装斗争和党的建设','政治建设','思想建设','文化建设'],answer:'统一战线、武装斗争和党的建设'},
+  {text:'健全什么国家战略体系和能力建设工作机制，完善涉军决策议事协调体制机制？',options:['现代化','规范化','多元化','一体化'],answer:'一体化'},
+  {text:'党员无正当理由，连续多久不缴纳党费，就被认为是自行脱党？',options:['3个月','4个月','6个月','12个月'],answer:'6个月'},
+  {text:'党的基层委员会、总支部委员会、支部委员会每届任期多久？',options:['一年至三年','三年至五年','五年至七年','两年至四年'],answer:'三年至五年'},
+  {text:'党组织应当通过什么方式提高党外群众对党的认识，不断扩大入党积极分子队伍？',options:['宣传党的政治主张和深入细致的思想政治工作','组织群众参加党的会议','邀请群众参与党内活动','定期向群众做报告'],answer:'宣传党的政治主张和深入细致的思想政治工作'},
+  {text:'高校党组织对组织关系保留在学校的高校毕业生流动党员，应当继续履行什么职责？党员组织关系保留时间一般不超过多久？',options:['继续履行管理职责，保留时间一般不超过2年','停止履行管理职责，保留时间不限','转移组织关系，保留时间一般不超过1年','暂停履行管理职责，保留时间一般不超过6个月'],answer:'继续履行管理职责，保留时间一般不超过2年'},
+  {text:'长征胜利跨越了多少个省，中央红军的总行程达2.5万里以上？',options:['10','11','12','13'],answer:'11'},
+  {text:'党的二十大报告指出，十年来，我们坚持走中国特色社会主义政治发展道路，全面发展什么人民民主？',options:['全方位','多层次','全过程','整体'],answer:'全过程'},
+  {text:'对采取弄虚作假或其他手段把不符合党员条件的人发展为党员，或为非党员出具党员身份证明的，应当如何处理？',options:['依法违纪严肃处理','仅给予警告','仅撤销职务','仅进行批评教育'],answer:'依法违纪严肃处理'},
+  {text:'在发展中保障和改善民生是什么？',options:['中国式现代化的重大任务','中国式现代化的次要任务','中国式现代化的辅助任务','中国式现代化的阶段性任务'],answer:'中国式现代化的重大任务'},
+  {text:'什么是我党执政兴国的第一要务？',options:['富强','民主','以人为本','发展'],answer:'发展'},
+  {text:'1936年10月9日，红四方面军指挥部到达哪里，同红一方面军会合？',options:['陕西吴起','四川甘孜','甘肃会宁','宁夏银川'],answer:'甘肃会宁'},
+  {text:'中国共产党百年历史可以划分成几个阶段？',options:['2','3','4','5'],answer:'4'},
+  {text:'对入党积极分子经过多久以上培养教育和考察，经支部委员会集体讨论同意，将其确定为发展对象？',options:['半年','一年','两年','半年或一年'],answer:'一年'},
+  {text:'1935年12月，中共中央在陕北召开政治局扩大会议，确立了建立广泛的抗日民族统一战线政策。这次会议是什么会议？',options:['瓦窑堡会议','古田会议','遵义会议','洛川会议'],answer:'瓦窑堡会议'},
+  {text:'什么的胜利是中国革命转危为安的关键？',options:['北伐战争','长征','抗日战争','解放战争'],answer:'长征'},
+  {text:'下列选项中，属于战略性产业的是什么？',options:['人工智能','航空航天','高端设备','生物医药'],answer:'人工智能'},
+  {text:'我们党作为世界上最大的马克思主义执政党，要始终赢得人民拥护，必须时刻保持解决大党独有难题的清醒和坚定。这是正确的吗？',options:['正确','错误'],answer:'正确'},
+  {text:'强化国家安全工作协调机制，完善国家安全什么体系、风险监测预警体系，完善重点领域安全保障体系和重要专项协调指挥体系？',options:['法治体系','制度体系','战略体系','政策体系'],answer:'法治体系'},
+  {text:'到哪一年完成《中共中央关于进一步全面深化改革推进中国式现代化的决定》提出的改革任务？',options:['2029年','2035年','2039年','2049年'],answer:'2035年'},
+  {text:'发展党员工作应坚持党章规定的党员标准，始终把什么放在首位？',options:['思想意识','党性修养','政治标准','政治觉悟'],answer:'政治标准'},
+  {text:'支部委员会应当对发展对象进行严格审查，经集体讨论认为合格后，报具有审批权限的什么预审？',options:['基层党委','党总支','地方党委','党小组'],answer:'基层党委'},
+  {text:'1931年9月18日，驻扎在中国东北的日本关东军向中国军队驻地北大营和哪座城市发动了九一八事变？',options:['锦州','沈阳','长春','北京'],answer:'沈阳'},
+  {text:'党的各级代表大会代表实行什么制度？',options:['常任制','任期制','委任制','授权制'],answer:'任期制'},
+  {text:'凡是有正式党员几人以上的，都应当成立党的基层组织？',options:['5','10','8','3'],answer:'3'},
+  {text:'哪个战役基本上解放了华北全境？',options:['淮海战役','辽沈战役','沈阳战役','平津战役'],answer:'平津战役'},
+  {text:'预备期从什么时候算起？',options:['党委审批同意','支部大会通过','向上级党组织报备通过','支部大会讨论'],answer:'支部大会通过'},
+  {text:'1953年，新中国正式提出什么时期的总路线？',options:['新民主主义革命时期','过渡时期','建设时期','新时代'],answer:'过渡时期'},
+  {text:'以下哪一支军队有“铁军”的称号？',options:['红一方面军','黄维兵团','国民革命军第十八集团军','国民革命军第四军'],answer:'国民革命军第四军'},
+  {text:'什么事件后，中日民族矛盾逐渐上升为主要矛盾？',options:['九一八事变','七七事变','西安事变','一二·九运动'],answer:'九一八事变'},
+  {text:'各级党委留存的党费主要用于教育培训党员和支持基层党组织开展组织生活。这是正确的吗？',options:['正确','错误'],answer:'正确'},
+  {text:'党员每年集中学习培训时间一般不少于多少学时？',options:['12','24','32','48'],answer:'32'},
+  {text:'党组织收到入党申请书后，应当在多久内派人同入党申请人谈话，了解基本情况？',options:['一个月','两个月','三个月','半年'],answer:'一个月'},
+  {text:'京汉铁路大罢工最终失败了。从中我们可以看出什么？',options:['工人运动不适合中国','工人普遍素质低下','资本主义正处于上升期','工人阶级势单力薄'],answer:'工人阶级势单力薄'},
+  {text:'哪一年开始的全国抗日战争，中国建立起抗日民族统一战线，既是关系中华民族生死存亡的关键阶段，也是中国共产党发展壮大的重要时期？',options:['1935','1937','1939','1942'],answer:'1937'},
+  {text:'建设现代化产业体系，坚持把发展经济的着力点放在实体经济上，推进什么？',options:['数字经济 传统工业','数字经济 新型工业化','实体经济 传统工业化','实体经济 新型工业化'],answer:'实体经济 新型工业化'},
+  {text:'1935年1月15日至17日，什么会议召开？',options:['遵义会议','瓦窑堡会议','西柏坡会议','古田会议'],answer:'遵义会议'},
+  {text:'哪一年6月，中共三大在广州召开？',options:['1923年','1924年','1925年','1926年'],answer:'1923年'},
+  {text:'哪一年召开的什么会议是第一次国共合作正式形成的标志？',options:['1924年1月,中共二大','1924年2月,国民党一大','1924年1月,国民党一大','1924年2月,中共二大'],answer:'1924年1月,国民党一大'},
+  {text:'什么是我们党最鲜明的品格，也是我们党最大的优势？',options:['为人民服务','从严治党','勇于自我革命','集中力量发展生产力'],answer:'勇于自我革命'},
+  {text:'第一个中文全译本《共产党宣言》是由谁翻译的？',options:['李大钊','陈独秀','毛泽东','陈望道'],answer:'陈望道'},
+  {text:'在什么起义中，起义军同敌人进行了顽强战斗，终因敌众我寡，起义很快即告失败，张太雷和许多革命者英勇牺牲？',options:['广州起义','秋收起义','海陆丰起义','湘南起义'],answer:'广州起义'},
+  {text:'随着国共合作步伐加快，应孙中山邀请，苏联代表谁到达广州，不久被聘为政治顾问？',options:['尼克尔斯基','马林','鲍罗廷','阿道夫·阿布拉莫维·越飞'],answer:'鲍罗廷'},
+  {text:'全国解放战争三大战役中，历时最长、规模最大、歼敌数量最多的是什么战役？',options:['辽沈战役','淮海战役','平津战役','淞沪战役'],answer:'淮海战役'},
+  {text:'党各级代表大会的代表和委员会的产生，要体现谁的意志？',options:['选举人','党员代表','党组织','党员'],answer:'选举人'},
+  {text:'党的三大决定共产党员以个人身份加入国民党，实现国共合作，同时必须在政治上、思想上、组织上保持自己的独立性。这是正确的吗？',options:['正确','错误'],answer:'正确'},
+  {text:'党的思想路线的内容是什么？',options:['全心全意为人民服务','一切从实际出发,理论联系实际,实事求是,在实践中检验真理和发展真理','坚持四项基本原则','加强党的思想领导'],answer:'一切从实际出发,理论联系实际,实事求是,在实践中检验真理和发展真理'},
+  {text:'赞成人数超过应到会有表决权的正式党员的多少比例，才能通过接收预备党员的决议？',options:['三分之一','半数','三分之二','五分之四'],answer:'半数'},
+  {text:'预备党员违犯党纪，情节较轻的，可以保留预备党员资格的，党组织应当对其批评教育或者延长预备期。这是正确的吗？',options:['正确','错误'],answer:'正确'},
+  {text:'预备党员违犯党纪，情节较重的，应当取消预备党员资格。这是正确的吗？',options:['正确','错误'],answer:'正确'},
+  {text:'什么是我们增强“四个自信”最坚实的基础？',options:['党的百年奋斗历程和伟大成就','精神文明建设','生产力的发展','中国特色社会主义'],answer:'党的百年奋斗历程和伟大成就'},
+  {text:'各级党委应当把发展党员工作列入重要议事日程，纳入党建工作责任制，作为党建工作述职、评议、考核和什么的重要内容？',options:['党务公开','年度计划','年度总结','奖惩情况'],answer:'党务公开'},
+  {text:'1925年7月1日，国民党政府在广州建立，谁当选为主席？',options:['汪精卫','蒋介石','孙中山','鲍罗廷'],answer:'汪精卫'},
+  {text:'参加党的有关会议，阅读党的有关文件，接受党的教育和培训属于党员的什么？',options:['权利','权力','义务','责任'],answer:'权利'},
+  {text:'什么是中国式现代化的根本保证？',options:['党的领导','依法治国','改革开放','科技创新'],answer:'党的领导'},
+  {text:'为保证党的路线、方针、政策、决议和国家法律法规的贯彻执行，根据什么，制定《中国共产党纪律处分条例》？',options:['《中华人民共和国宪法》','《中国共产党章程》','《中国共产党廉洁自律准则》','《中国共产党党内监督条例》'],answer:'《中国共产党章程》'},
+  {text:'中共中央于1946年5月4日将抗战以来的土地政策改为什么政策？',options:['减租减息','平均地权','军垦屯田','耕者有其田'],answer:'耕者有其田'},
+  {text:'发展什么人民民主是中国式现代化的本质要求？',options:['全覆盖','全过程','全方位','全链条'],answer:'全过程'},
+  {text:'什么是土地革命战争后期全国硕果仅存的完整革命根据地，为党中央和各路红军长征提供了落脚点？',options:['陕甘根据地','赣南根据地','闽西根据地','琼崖革命根据地'],answer:'陕甘根据地'},
+  {text:'中国共产党成立后，建立了中国劳动组合书记部，集中力量从事工人运动。以1922年1月香港海员罢工为起点，掀起中国工人运动的第一个高潮。这是正确的吗？',options:['正确','错误'],answer:'正确'},
+  {text:'1956年新中国基本完成对农业、手工业、资本主义工商业的社会主义改造。这是正确的吗？',options:['正确','错误'],answer:'正确'},
+  {text:'红船精神：开天辟地、敢为人先。这是正确的吗？',options:['正确','错误'],answer:'正确'},
+  {text:'因思想蜕化提出退党，经教育后仍然坚持退党的，给予开除党籍处分。这是正确的吗？',options:['正确','错误'],answer:'正确'},
+  {text:'协商民主是实践全过程人民民主的重要形式。这是正确的吗？',options:['正确','错误'],answer:'正确'},
+  {text:'大革命失败后集中体现中国革命正确方向的是毛泽东、朱德领导的井冈山革命根据地的斗争。这是正确的吗？',options:['正确','错误'],answer:'正确'},
+  {text:'延安时期，为了解决党内存在的思想分歧、宗派主义等问题，我们党开展了大规模的整风运动，使全党达到了空前的团结和统一，为夺取抗战胜利和全国解放奠定了强大思想政治基础。这是正确的吗？',options:['正确','错误'],answer:'正确'},
+  {text:'中国抗战进入战略相持阶段的标志性事件是什么？',options:['徐州会战结束','日军占领广州和武汉','国民政府迁都重庆','汪精卫建立伪政权'],answer:'日军占领广州和武汉'},
+  {text:'对停止党籍的党员，符合条件的，可以按照规定程序恢复党籍。对劝其退党、劝而不退除名、自行脱党除名、退党除名、开除党籍的，原则上不能恢复党籍，符合条件的可以重新入党。这是正确的吗？',options:['正确','错误'],answer:'正确'},
+  {text:'对年老体弱、行动不便、身患重病甚至失能的党员，组织活动和开展学习教育可以不作硬性要求。这是正确的吗？',options:['正确','错误'],answer:'正确'},
+  {text:'发展党员坚持入党自愿原则和个别吸收原则，成熟一个，发展一个。这是正确的吗？',options:['正确','错误'],answer:'正确'},
+  {text:'民主评议党员不可以结合组织生活会一并进行。这是正确的吗？',options:['正确','错误'],answer:'错误'},
+  {text:'留党察看延长期限最长可以延长多久？',options:['一年','两年','三年','四年'],answer:'两年'},
+  {text:'从实际出发是我们共产党人认识把握历史的根本方法。这是正确的吗？',options:['正确','错误'],answer:'错误'},
+  {text:'党员受留党察看处分期间，没有知情权、选举权和被选举权。这是正确的吗？',options:['正确','错误'],answer:'错误'},
+  {text:'"八届九中全会"初步总结了"大跃进"以来的经验教训。这是正确的吗？',options:['正确','错误'],answer:'错误'},
+  {text:'开国大典之前，第一届人民政治协商会议选举产生的中央人民政府委员会举行第一次会议，一致决议接受《共同纲领》为施政纲领。这是正确的吗？',options:['正确','错误'],answer:'正确'},
+  {text:'《中国共产党纪律处分条例》适用于所有中国共产党党员和各级党组织。这是正确的吗？',options:['正确','错误'],answer:'错误'},
+  {text:'什么地区是改革开放的排头兵、先行地、实验区，是建立经济特区时间最早、数量最多的省份？',options:['上海','广东','北京','浙江'],answer:'广东'},
+  {text:'土地革命时期，毛泽东指出："星星之火，可以燎原"，这里的"星星之火"是指什么？',options:['井冈山根据地','陕甘根据地','左右江根据地','中央根据地'],answer:'井冈山根据地'},
+  {text:'什么是我们党立党兴党强党的根本出发点和落脚点？',options:['坚持党的领导','加强党的自身建设','坚持社会主义意识形态','为人民利益而奋斗'],answer:'为人民利益而奋斗'},
+  {text:'1927年8月1日，在以谁为书记的中共中央前敌委员会领导下，党所掌握和影响的军队在南昌打响了武装反抗国民党的第一枪？',options:['毛泽东','朱德','周恩来','叶挺'],answer:'周恩来'},
+  {text:'什么是中国式现代化的首要问题？',options:['师资问题','思想路线问题','如何培养人','培养什么人'],answer:'培养什么人'},
+  {text:'党的领导是进一步全面深化改革、推进中国式现代化的什么？',options:['最大优势','本质要求','根本保证','内在要求'],answer:'根本保证'},
+  {text:'西安事变的背景是什么？',options:['中共中央公开表示"反蒋抗日"','七七卢沟桥事变爆发','蒋介石准备对陕北根据地进行新的"会剿"','一二九运动在西安爆发'],answer:'蒋介石准备对陕北根据地进行新的"会剿"'},
+  {text:'古田会议决议强调要加强红军什么工作？',options:['思想','理论','政治','战略'],answer:'政治'},
+  {text:'中共四大选出的新一届中央执行委员会中，谁不在此列？',options:['张国焘','瞿秋白','陈独秀','毛泽东'],answer:'毛泽东'}
+];
+
+    let level = 1, maxLevels = 3;
+
+    function updateScore() {
+      scoreDisplay.innerText = `得分: ${score}`;
+    }
+
+    // 关卡布局函数集（第2、3关砖块密度翻倍、尺寸缩半）
+    const patterns = {
+      1: (cols, rows) => ({cols, rows, brickW:60, brickH:12, ballSpeed:2}),
+      2: (cols, rows) => {
+        const C = cols * 2, R = rows * 2;
+        const custom = (function(){
+          const arr = [], centerX = C/2, centerY = R/2;
+          for(let c=0; c<C; c++) for(let r=0; r<R; r++){
+            const x = (c-centerX)/(C/2), y = (r-centerY)/(R/2);
+            if((x*x + (y - Math.sqrt(Math.abs(x)))**2) < 0.5) arr.push({c, r});
+          }
+          return arr;
+        })();
+        return {cols:C, rows:R, custom, brickW:25, brickH:5, ballSpeed:4};
+      },
+      3: (cols, rows) => {
+        const C = cols * 2, R = rows * 2;
+        // 这里可以填入自定义“党”字骨架坐标数组，坐标系对应于 (c, r)
+        const custom = [
+          /* 自定义"党"字骨架坐标，格式同上：{c:..., r:...} */
+        ];
+        return {cols:C, rows:R, custom, brickW:20, brickH:4, ballSpeed:6};
+      }
+    };
+
+    function initBricks(){
+      const baseCols = 7 + (level-1)*2, baseRows = 5 + (level-1);
+      const cfg = patterns[level](baseCols, baseRows);
+      const {cols: C, rows: R, brickW: bw, brickH: bh, ballSpeed} = cfg;
+      window.cols = C; window.rows = R; window.brickW = bw; window.brickH = bh;
+      window.ballSpeed = ballSpeed;
+      bricks = Array.from({length:C},()=> Array.from({length:R},()=>({x:0,y:0,status:0})));
+      if(cfg.custom && cfg.custom.length){
+        cfg.custom.forEach(({c,r})=>{
+          if (bricks[c] && bricks[c][r]) bricks[c][r].status = 1;
+        });
+      } else {
+        for(let c=0;c<C;c++) for(let r=0;r<R;r++) bricks[c][r].status = 1;
+      }
+      savedBricks = cloneBricks(bricks);
+    }
+
+    function cloneBricks(src){ return src.map(col=>col.map(b=>({...b}))); }
+    function resetPaddle(){ paddle = {w:80, h:10, x:(W-80)/2, speed:4}; }
+    function resetBalls(){ balls = [{r:6, x:paddle.x+paddle.w/2, y:H-paddle.h-10, dx:ballSpeed, dy:-ballSpeed}]; }
+
+    function start(){
+      score=0; knowledgeCount=0; wrongCount=0;
+      updateScore(); quizQueue=[]; powerups=[];
+      level=1; initBricks(); resetPaddle(); resetBalls();
+      document.getElementById('quizOverlay').classList.remove('show');
+      document.getElementById('endOverlay').style.visibility='hidden';
+      cancelAnimationFrame(animationId); drawLoop();
+    }
+
+    // ==== 渲染 & 逻辑 ====
+    function drawLoop(){
+      animationId = requestAnimationFrame(drawLoop);
+      ctx.clearRect(0,0,W,H);
+      drawBricks(); drawBalls(); drawPaddle(); drawPowerups();
+      detectHits(); moveBalls(); movePowerups(); handleInput();
+      if(checkWin()){ handleWin(); }
+    }
+
+    function drawBricks(){
+      for(let c=0; c<cols; c++) for(let r=0; r<rows; r++){
+        const b = bricks[c][r]; if(b.status){
+          b.x = 10 + c*(brickW+5); b.y = 20 + r*(brickH+5);
+          ctx.fillStyle = '#e74c3c'; ctx.fillRect(b.x, b.y, brickW, brickH);
+        }
+      }
+    }
+
+    function drawBalls(){
+      balls.forEach(b=>{
+        ctx.beginPath(); ctx.arc(b.x,b.y,b.r,0,2*Math.PI);
+        ctx.fillStyle='#f1c40f'; ctx.fill(); ctx.closePath();
+      });
+    }
+
+    function drawPaddle(){
+      ctx.beginPath(); ctx.rect(paddle.x,H-paddle.h,paddle.w,paddle.h);
+      ctx.fillStyle='#3498db'; ctx.fill(); ctx.closePath();
+    }
+
+    function drawPowerups(){
+      powerups.forEach(p=>{
+        ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,2*Math.PI);
+        ctx.fillStyle='#f39c12'; ctx.fill(); ctx.closePath();
+      });
+    }
+
+    function detectHits(){
+      balls.forEach(ball=>{
+        for(let c=0;c<cols;c++)for(let r=0;r<rows;r++){
+          const b=bricks[c][r];
+          if(b.status && ball.x>b.x && ball.x<b.x+brickW && ball.y>b.y && ball.y<b.y+brickH){
+            ball.dy=-ball.dy;
+            b.status=0;
+            score+=10; knowledgeCount++;
+            updateScore();
+            savedBricks=cloneBricks(bricks);
+            spawnBubble();
+            quizQueue.push(randomQuiz());
+            if(Math.random()<0.2){
+              powerups.push({x:b.x+brickW/2,y:b.y+brickH,p:0,r:6,dy:1});
+            }
+          }
+        }
+      });
+      powerups.forEach((p,i)=>{
+        if(p.y+p.r>H-paddle.h && p.x>paddle.x && p.x<paddle.x+paddle.w){
+          const refBall = balls[0];
+          balls.push({r:refBall.r,x:refBall.x,y:refBall.y,dx:-refBall.dx,dy:refBall.dy});
+          powerups.splice(i,1);
+        }
+      });
+    }
+
+    function moveBalls(){
+      balls.forEach((ball,i)=>{
+        if(ball.x+ball.dx>W-ball.r||ball.x+ball.dx<ball.r) ball.dx=-ball.dx;
+        if(ball.y+ball.dy<ball.r) ball.dy=-ball.dy;
+        else if(ball.y+ball.dy>H-ball.r){
+          if(ball.x>paddle.x&&ball.x<paddle.x+paddle.w) ball.dy=-ball.dy;
+          else balls.splice(i,1);
+        }
+        ball.x+=ball.dx; ball.y+=ball.dy;
+      });
+      if(balls.length===0) triggerGameOver();
+    }
+
+    function movePowerups(){ powerups.forEach(p=>{ p.y+=p.dy; }); }
+    function handleInput(){
+      if(rightPressed&&paddle.x+paddle.w<W) paddle.x+=paddle.speed;
+      if(leftPressed&&paddle.x>0) paddle.x-=paddle.speed;
+    }
+
+    function checkWin(){ return !bricks.flat().some(b=>b.status===1); }
+    function handleWin(){
+      cancelAnimationFrame(animationId);
+      alert(`恭喜完成第${level}关！当前得分：${score}`);
+      if(level<maxLevels && confirm(`进入第${level+1}关？`)) { level++; }
+      else { level=1; }
+      initBricks(); resetPaddle(); resetBalls(); powerups=[]; drawLoop(); updateScore();
+    }
+
+  function spawnBubble() {
+  const panel = panels[Math.random()<0.5?0:1];
+  const existing = panel.querySelectorAll('.fact-bubble');
+  
+  // 计算垂直起始位置（基于现有气泡数量）
+  const startTop = existing.length * 80; // 每个气泡间隔80px
+  
+  const bubble = document.createElement('div'); 
+  bubble.className='fact-bubble';
+  bubble.innerText = facts[Math.floor(Math.random()*facts.length)];
+  panel.appendChild(bubble);
+  
+  // 设置初始位置（水平随机+垂直叠加）
+  const maxLeft = panel.clientWidth - bubble.offsetWidth;
+  bubble.style.left = Math.random()*maxLeft + 'px';
+  bubble.style.top = startTop + 'px'; // 垂直叠加排列
+
+  // 保持原有动画逻辑...
+  requestAnimationFrame(() => {
+    bubble.style.opacity = 1;
+    bubble.style.transform = `translateY(${panel.clientHeight - startTop - 80}px)`; // 下落时保持间距
+  });
+
+  setTimeout(() => {
+    bubble.style.opacity = 0;
+    setTimeout(() => bubble.remove(), 500);
+  }, 5500);
+}
+
+    function randomQuiz(){ return quizQuestions[Math.floor(Math.random()*quizQuestions.length)]; }
+
+    function triggerGameOver(){
+      cancelAnimationFrame(animationId);
+      presentQuestion();
+    }
+
+    function presentQuestion(){
+      const overlay = document.getElementById('quizOverlay');
+      const textEl = document.getElementById('quizText');
+      const optsEl = document.getElementById('options');
+      const fbEl = document.getElementById('feedbackText');
+      fbEl.innerText='';
+      if(quizQueue.length===0) return endSession();
+      overlay.classList.add('show');
+      const q = quizQueue.shift();
+      textEl.innerText = q.text;
+      optsEl.innerHTML = '';
+      q.options.forEach(opt=>{
+        const btn = document.createElement('button');
+        btn.innerText = opt;
+        btn.onclick = ()=>{
+          if(opt===q.answer){
+            bricks = cloneBricks(savedBricks);
+            resetPaddle(); resetBalls();
+            overlay.classList.remove('show');
+            updateScore(); drawLoop();
+          } else {
+            wrongCount++;
+            fbEl.innerText = '回答错误，正确答案：'+q.answer;
+            setTimeout(endSession,2000);
+          }
+        };
+        optsEl.appendChild(btn);
+      });
+    }
+
+    function endSession(){
+      document.getElementById('quizOverlay').classList.remove('show');
+      document.getElementById('finalScore').innerText = `总得分: ${score}`;
+      document.getElementById('pointsEarned').innerText = `获得知识点: ${knowledgeCount}`;
+      document.getElementById('wrongAnswered').innerText = `答错题数: ${wrongCount}`;
+      document.getElementById('endOverlay').style.visibility = 'visible';
+    }
+
+    // 键盘事件
+    let rightPressed=false, leftPressed=false;
+    document.addEventListener('keydown',e=>{
+      if(e.key==='ArrowRight') rightPressed=true;
+      if(e.key==='ArrowLeft') leftPressed=true;
+    });
+    document.addEventListener('keyup',e=>{
+      if(e.key==='ArrowRight') rightPressed=false;
+      if(e.key==='ArrowLeft') leftPressed=false;
+    });
+
+    // 启动 & 规则 & 结束按钮
+    document.getElementById('startBtn').onclick = ()=>{
+      document.getElementById('startOverlay').style.visibility='hidden';
+      start();
+    };
+    document.getElementById('showRulesBtn').onclick = ()=>{
+      document.getElementById('rulesOverlay').style.visibility='visible';
+      const lines=[
+        '每砸一个砖块可以得到一个党的知识点。',
+        '这个知识点会在失误之后进行考察，',
+        '考察成功后会得到一次复活的机会哦。',
+        '本游戏一共三关，欢迎挑战！',
+        '制作人：颜瑾昱、贺特、宋子怡、张锋锐、戴雨凡'
+      ];
+      lines.forEach((text,i)=>{
+        const bubble=document.createElement('div'); bubble.className='bubble';
+        bubble.style.top=(20+i*80)+'px'; bubble.innerText=text;
+        document.getElementById('rulesOverlay').appendChild(bubble);
+        setTimeout(()=>{
+          bubble.style.opacity=1;
+          bubble.style.transform='translateX(-50%) translateY(0)';
+        }, i*800);
+      });
+    };
+    document.getElementById('closeRulesBtn').onclick = ()=>{
+      document.getElementById('rulesOverlay').style.visibility='hidden';
+    };
+    document.getElementById('restartBtn').onclick = ()=>{
+      location.reload();
+    };
+  </script>
+
+</body>
+</html>
